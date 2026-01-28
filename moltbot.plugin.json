@@ -1,0 +1,28 @@
+{
+  "id": "dexter-x402",
+  "name": "Dexter x402",
+  "description": "Connect to Dexter's 59+ Solana DeFi tools via x402 protocol. Trading, analytics, games, creative APIs, and more.",
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "baseUrl": {
+        "type": "string",
+        "default": "https://mcp.dexter.cash/mcp",
+        "description": "Dexter MCP server URL (only change for custom instances)"
+      },
+      "autoRefreshTools": {
+        "type": "boolean",
+        "default": true,
+        "description": "Automatically refresh tool list on session start"
+      }
+    }
+  },
+  "uiHints": {
+    "baseUrl": {
+      "label": "MCP Server URL",
+      "advanced": true,
+      "help": "Default: https://mcp.dexter.cash/mcp"
+    }
+  }
+}

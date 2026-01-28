@@ -1,0 +1,25 @@
+{
+  "name": "@dexterai/moltbot-x402",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Moltbot plugin for Dexter x402 - 59+ Solana DeFi tools via MCP with OAuth authentication",
+  "keywords": ["moltbot", "x402", "dexter", "solana", "defi", "mcp", "oauth", "plugin"],
+  "author": "Dexter AI <dev@dexter.cash>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dexterai/moltbot-x402"
+  },
+  "homepage": "https://dexter.cash",
+  "moltbot": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.3"
+  },
+  "peerDependencies": {
+    "moltbot": "*"
+  }
+}
