@@ -1,6 +1,6 @@
 {
   "name": "@dexterai/moltbot-x402",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "type": "module",
   "description": "Moltbot plugin for x402 payments - generic x402_pay/x402_search tools PLUS 59+ Dexter MCP tools via OAuth",
   "keywords": ["moltbot", "x402", "dexter", "solana", "defi", "mcp", "oauth", "plugin", "payments", "usdc", "base"],
