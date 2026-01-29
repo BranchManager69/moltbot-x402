@@ -183,10 +183,18 @@ moltbot agent --local --session-id demo -m "What's trending on Solana right now?
 
 ### Authentication Flow
 
-1. **Dynamic Client Registration (DCR)**: Plugin registers with Dexter's OAuth server, declaring `http://localhost:51199/oauth-callback` as redirect URI
-2. **PKCE Authorization**: Browser-based OAuth with S256 code challenge
-3. **Token Exchange**: Authorization code exchanged for access + refresh tokens
-4. **Automatic Refresh**: Tokens refreshed automatically before expiry
+**Primary (Desktop/CLI):**
+1. **Link Request**: Plugin creates a tracking code via `api.dexter.cash/api/moltbot/link/create`
+2. **DCR**: Plugin registers with Dexter's OAuth server using remote callback (`dexter.cash/moltbot/link/callback`)
+3. **PKCE Authorization**: Browser-based OAuth with S256 code challenge
+4. **Remote Callback**: OAuth redirects to `dexter.cash`, backend stores tokens
+5. **Poll Completion**: Plugin polls for tokens, retrieves them when ready
+6. **Automatic Refresh**: Tokens refreshed automatically before expiry
+
+**Fallback (Telegram/Remote):**
+1. **Device Code**: Plugin creates link code, displays to user
+2. **Manual Auth**: User visits `dexter.cash/moltbot/link?code=XXXX`, signs in
+3. **Poll Completion**: Plugin polls until user completes auth
 
 ### MCP Integration
 
@@ -315,6 +323,8 @@ Rather than registering 59+ individual tools (which would overwhelm the agent's 
 
 OAuth credentials are stored in:
 ```
+~/.moltbot/auth-profiles.json
+# or legacy location:
 ~/.clawdbot/agents/main/agent/auth-profiles.json
 ```
 
@@ -344,14 +354,16 @@ The tool couldn't find valid credentials. Run:
 moltbot models auth login --provider dexter-x402
 ```
 
-### OAuth callback fails on remote server
+### OAuth on Telegram or remote server
 
-If you're SSH'd into a remote server, Cursor's port forwarding should handle `localhost:51199` redirects automatically. If not:
+The plugin automatically uses device code flow for Telegram and remote environments:
 
-1. The plugin shows the OAuth URL
-2. Open it in your local browser
-3. After signing in, you'll see "Connected to Dexter"
-4. The callback is received via the forwarded port
+1. Plugin displays a link code (e.g., `ABC12345`)
+2. Visit `dexter.cash/moltbot/link?code=ABC12345` in any browser
+3. Sign in to Dexter and click "Connect"
+4. Return to Moltbot - it will detect the auth automatically
+
+No localhost or port forwarding needed.
 
 ### Token expired
 
