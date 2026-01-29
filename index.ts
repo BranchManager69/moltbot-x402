@@ -434,18 +434,22 @@ async function callDexterTool(params: {
 }
 
 // =============================================================================
-// OAuth Login Flow - Supports both localhost callback and code-based (Telegram)
+// OAuth Login Flow
+// Primary: Traditional OAuth with REMOTE callback (dexter.cash)
+// Fallback: Device code flow for Telegram/edge cases
 // =============================================================================
 
 const DEXTER_LINK_API = "https://api.dexter.cash/api/moltbot/link";
-const CODE_POLL_INTERVAL_MS = 2000;
-const CODE_POLL_MAX_ATTEMPTS = 150; // 5 minutes with 2s intervals
+const REMOTE_CALLBACK_URI = "https://dexter.cash/moltbot/link/callback";
+const POLL_INTERVAL_MS = 2000;
+const POLL_MAX_ATTEMPTS = 150; // 5 minutes with 2s intervals
 
 /**
- * Code-based OAuth flow for Telegram/remote users.
- * Creates a link code, user authorizes via browser, we poll for completion.
+ * Device code flow for Telegram users.
+ * Shows a code, user visits link manually, we poll for completion.
+ * Used when traditional OAuth redirect isn't possible.
  */
-async function loginDexterWithCode(params: {
+async function loginDexterDeviceCode(params: {
   baseUrl: string;
   openUrl: (url: string) => Promise<void>;
   note: (message: string, title?: string) => Promise<void>;
@@ -459,13 +463,13 @@ async function loginDexterWithCode(params: {
 }> {
   params.progress.update("Creating Dexter link code...");
   
-  // Step 1: Create link request
   const createResponse = await fetch(`${DEXTER_LINK_API}/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      clientHint: params.clientHint || "moltbot",
+      clientHint: params.clientHint || "telegram",
       ttlSeconds: 600,
+      flowType: "device_code",
     }),
   });
   
@@ -488,46 +492,57 @@ async function loginDexterWithCode(params: {
   const code = linkData.code;
   const linkUrl = linkData.linkUrl;
   
-  params.log(`[dexter] Link code: ${code}`);
+  params.log(`[dexter] Device code: ${code}`);
   params.log(`[dexter] Link URL: ${linkUrl}`);
   
-  // Step 2: Show code to user
   await params.note(
     [
       "🔐 Connect your Dexter account",
       "",
-      `Your link code: ${code}`,
+      `Your code: ${code}`,
       "",
-      "Click the link below to authorize:",
+      "Open this link to authorize:",
       linkUrl,
       "",
       "The code expires in 10 minutes.",
-      "Waiting for authorization...",
     ].join("\n"),
     "Dexter Sign-In",
   );
   
-  // Try to open URL
   try {
     await params.openUrl(linkUrl);
   } catch {
-    // User can click the link manually
+    // User can click manually
   }
   
-  // Step 3: Poll for completion
-  params.progress.update(`Waiting for authorization (code: ${code})...`);
+  return pollForCompletion({ code, log: params.log, progress: params.progress });
+}
+
+/**
+ * Poll the link status endpoint until completion or timeout.
+ */
+async function pollForCompletion(params: {
+  code: string;
+  log: (message: string) => void;
+  progress: { update: (msg: string) => void; stop: (msg?: string) => void };
+}): Promise<{
+  access: string;
+  refresh: string;
+  expires: number;
+}> {
+  params.progress.update(`Waiting for authorization...`);
   
-  for (let attempt = 0; attempt < CODE_POLL_MAX_ATTEMPTS; attempt++) {
-    await new Promise(resolve => setTimeout(resolve, CODE_POLL_INTERVAL_MS));
+  for (let attempt = 0; attempt < POLL_MAX_ATTEMPTS; attempt++) {
+    await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
     
     try {
-      const statusResponse = await fetch(`${DEXTER_LINK_API}/status?code=${code}`);
+      const statusResponse = await fetch(`${DEXTER_LINK_API}/status?code=${params.code}`);
       
       if (!statusResponse.ok) {
         if (statusResponse.status === 404) {
-          throw new Error("Link code expired or not found");
+          throw new Error("Link expired or not found");
         }
-        continue; // Transient error, keep polling
+        continue;
       }
       
       const status = await statusResponse.json() as {
@@ -539,11 +554,11 @@ async function loginDexterWithCode(params: {
       };
       
       if (status.status === "expired") {
-        throw new Error("Link code expired. Please try again.");
+        throw new Error("Link expired. Please try again.");
       }
       
       if (status.status === "revoked") {
-        throw new Error("Link was cancelled. Please try again.");
+        throw new Error("Link was cancelled.");
       }
       
       if (status.status === "completed" && status.accessToken) {
@@ -552,7 +567,7 @@ async function loginDexterWithCode(params: {
         
         const expiresAt = status.expiresAt 
           ? new Date(status.expiresAt).getTime() - 5 * 60 * 1000
-          : Date.now() + 55 * 60 * 1000; // Default 55 min
+          : Date.now() + 55 * 60 * 1000;
         
         return {
           access: status.accessToken,
@@ -561,15 +576,13 @@ async function loginDexterWithCode(params: {
         };
       }
       
-      // Still pending, continue polling
       if (attempt % 15 === 0) {
-        params.log(`[dexter] Still waiting for authorization... (attempt ${attempt + 1})`);
+        params.log(`[dexter] Waiting for authorization... (${attempt + 1})`);
       }
     } catch (err) {
-      if (err instanceof Error && err.message.includes("expired")) {
+      if (err instanceof Error && (err.message.includes("expired") || err.message.includes("cancelled"))) {
         throw err;
       }
-      // Network error, continue polling
       params.log(`[dexter] Poll error: ${err instanceof Error ? err.message : err}`);
     }
   }
@@ -590,11 +603,10 @@ async function loginDexter(params: {
   refresh: string;
   expires: number;
 }> {
-  // For remote/Telegram clients, always use code-based flow
-  // This is the most reliable method for mobile and SSH scenarios
+  // For Telegram/pure-remote: use device code flow (shows code, user visits link)
   if (params.isRemote) {
-    params.log("[dexter] Using code-based auth (remote/Telegram mode)");
-    return loginDexterWithCode({
+    params.log("[dexter] Using device code flow (Telegram mode)");
+    return loginDexterDeviceCode({
       baseUrl: params.baseUrl,
       openUrl: params.openUrl,
       note: params.note,
@@ -604,26 +616,28 @@ async function loginDexter(params: {
     });
   }
 
-  params.progress.update("Fetching Dexter OAuth configuration...");
-  const metadata = await fetchOAuthMetadata(params.baseUrl);
-
-  // Try to start local callback server first
-  let callbackServer: Awaited<ReturnType<typeof startCallbackServer>> | null = null;
-  let effectiveRedirectUri = REDIRECT_URI;
+  // Primary flow: Traditional OAuth with REMOTE callback
+  // 1. Create link request (for tracking)
+  // 2. Build OAuth URL with remote callback
+  // 3. Open browser
+  // 4. Poll for completion
   
-  try {
-    callbackServer = await startCallbackServer({ timeoutMs: 5 * 60 * 1000 });
-    effectiveRedirectUri = REDIRECT_URI;
-    params.log(`[dexter] Callback server listening on port ${CALLBACK_PORT}`);
-  } catch (err) {
-    params.log(`[dexter] Callback server failed: ${err instanceof Error ? err.message : err}`);
-    callbackServer = null;
-  }
-
-  // If no callback server, fall back to code-based auth
-  if (!callbackServer) {
-    params.log("[dexter] Falling back to code-based auth");
-    return loginDexterWithCode({
+  params.progress.update("Initializing Dexter OAuth...");
+  
+  // Create link request to track this auth attempt
+  const createResponse = await fetch(`${DEXTER_LINK_API}/create`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      clientHint: "cli",
+      ttlSeconds: 600,
+      flowType: "oauth",
+    }),
+  });
+  
+  if (!createResponse.ok) {
+    params.log("[dexter] Failed to create link, falling back to device code");
+    return loginDexterDeviceCode({
       baseUrl: params.baseUrl,
       openUrl: params.openUrl,
       note: params.note,
@@ -632,6 +646,102 @@ async function loginDexter(params: {
       clientHint: "cli",
     });
   }
+  
+  const linkData = await createResponse.json() as {
+    ok: boolean;
+    code: string;
+    linkUrl: string;
+  };
+  
+  if (!linkData.ok || !linkData.code) {
+    throw new Error("Failed to initialize auth");
+  }
+  
+  const code = linkData.code;
+  params.log(`[dexter] Auth session: ${code}`);
+  
+  // Fetch OAuth metadata
+  params.progress.update("Fetching OAuth configuration...");
+  const metadata = await fetchOAuthMetadata(params.baseUrl);
+
+  // Register with DCR using REMOTE callback
+  params.progress.update("Registering with Dexter...");
+  
+  const registrationEndpoint = metadata.registration_endpoint 
+    || params.baseUrl.replace(/\/mcp\/?$/, "") + "/mcp/register";
+  
+  // Build callback URL that includes our tracking code
+  const callbackUrl = `${REMOTE_CALLBACK_URI}?link_code=${code}`;
+  
+  let clientId: string;
+  try {
+    const dcrResponse = await registerDcrClient({
+      registrationEndpoint,
+      redirectUri: callbackUrl,
+      clientName: "Moltbot Dexter x402",
+    });
+    clientId = dcrResponse.client_id;
+    params.log(`[dexter] Registered client: ${clientId}`);
+  } catch (err) {
+    params.log(`[dexter] DCR failed: ${err instanceof Error ? err.message : err}`);
+    // Fall back to device code flow
+    return loginDexterDeviceCode({
+      baseUrl: params.baseUrl,
+      openUrl: params.openUrl,
+      note: params.note,
+      log: params.log,
+      progress: params.progress,
+      clientHint: "cli",
+    });
+  }
+
+  // Build OAuth authorization URL
+  const { verifier, challenge } = generatePkce();
+  const state = `${code}:${randomBytes(8).toString("hex")}`;
+  
+  const scopes = metadata.scopes_supported?.length
+    ? metadata.scopes_supported.filter((s) => DEFAULT_SCOPES.includes(s))
+    : DEFAULT_SCOPES;
+  
+  const authUrl = buildAuthUrl({ 
+    metadata,
+    clientId,
+    challenge, 
+    state, 
+    scopes,
+    redirectUri: callbackUrl,
+  });
+
+  params.log(`[dexter] Opening browser for authorization...`);
+  params.log(`[dexter] Auth URL: ${authUrl}`);
+
+  // Store PKCE verifier for the callback to use
+  // The backend will need this to exchange the code
+  await fetch(`${DEXTER_LINK_API}/pkce`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      code: code,
+      verifier: verifier,
+      clientId: clientId,
+      redirectUri: callbackUrl,
+    }),
+  }).catch(() => {
+    // Non-fatal - backend might not support this yet
+    params.log("[dexter] PKCE storage not available, callback will handle exchange");
+  });
+
+  // Open browser
+  params.progress.update("Opening Dexter sign-in...");
+  try {
+    await params.openUrl(authUrl);
+  } catch {
+    // Log URL for manual use
+    params.log(`[dexter] Could not open browser. Visit: ${authUrl}`);
+  }
+
+  // Poll for completion
+  return pollForCompletion({ code, log: params.log, progress: params.progress });
 
   // Use Dynamic Client Registration (DCR) to register our redirect URI
   params.progress.update("Registering with Dexter...");
