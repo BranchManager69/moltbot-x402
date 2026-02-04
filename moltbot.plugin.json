@@ -1,6 +1,6 @@
 {
-  "id": "dexter-x402",
-  "name": "Dexter x402",
+  "id": "clawdexter",
+  "name": "ClawDexter",
   "description": "x402 payments + Dexter DeFi tools. Generic x402_pay/x402_search for ANY paid API (config-based), plus 59+ authenticated Dexter MCP tools.",
   "configSchema": {
     "type": "object",

@@ -345,7 +345,7 @@ async function getMcpClient(params: {
   
   // Create new MCP client
   const client = new Client({ 
-    name: "moltbot-dexter-x402", 
+    name: "clawdexter", 
     version: "1.0.0" 
   });
   
@@ -980,7 +980,7 @@ function createX402PayTool(config: PluginConfig, telemetry: DexterTelemetry) {
         let body: string | undefined;
         const requestHeaders: Record<string, string> = {
           Accept: "application/json",
-          "User-Agent": "moltbot-dexter-x402/2.0",
+          "User-Agent": "clawdexter/2.0",
           ...((input.headers as Record<string, string>) || {}),
         };
 
@@ -1198,8 +1198,8 @@ function createX402SearchTool(config: PluginConfig) {
 // =============================================================================
 
 const dexterMcpPlugin = {
-  id: "dexter-x402",
-  name: "Dexter x402",
+  id: "clawdexter",
+  name: "ClawDexter",
   description: "x402 payments + Dexter DeFi tools. Generic x402_pay/x402_search for ANY paid API, plus 59+ authenticated Dexter MCP tools.",
   
   register(api: MoltbotPluginApi) {
@@ -1212,8 +1212,8 @@ const dexterMcpPlugin = {
     
     // Register OAuth provider
     api.registerProvider({
-      id: "dexter-x402",
-      label: "Dexter",
+      id: "clawdexter",
+      label: "ClawDexter",
       docsPath: "/providers/dexter",
       aliases: ["dexter"],
       
@@ -1238,10 +1238,10 @@ const dexterMcpPlugin = {
                 progress: spin,
               });
 
-              const profileId = "dexter-x402:default";
+              const profileId = "clawdexter:default";
               const credential: DexterOAuthCredential = {
                 type: "oauth",
-                provider: "dexter-x402",
+                provider: "clawdexter",
                 access: result.access,
                 refresh: result.refresh,
                 expires: result.expires,
@@ -1278,7 +1278,7 @@ const dexterMcpPlugin = {
       ],
       
       refreshOAuth: async (cred) => {
-        if (cred.provider !== "dexter-x402") return cred;
+        if (cred.provider !== "clawdexter") return cred;
         
         const dexterCred = cred as DexterOAuthCredential;
         const metadata = await fetchOAuthMetadata(dexterCred.baseUrl || baseUrl);
@@ -1320,9 +1320,9 @@ const dexterMcpPlugin = {
             const data = await fs.readFile(authPath, "utf8");
             const parsed = JSON.parse(data);
             
-            // Handle nested structure: { version, profiles: { "dexter-x402:default": {...} } }
+            // Handle nested structure: { version, profiles: { "clawdexter:default": {...} } }
             const profiles = parsed.profiles || parsed;
-            const profile = profiles["dexter-x402:default"];
+            const profile = profiles["clawdexter:default"];
             
             if (profile?.type === "oauth" && profile?.access) {
               currentCredential = {
@@ -1365,7 +1365,7 @@ const dexterMcpPlugin = {
               return {
                 content: [{
                   type: "text" as const,
-                  text: "Not connected to Dexter. Run 'moltbot models auth login --provider dexter-x402' to connect.",
+                  text: "Not connected to Dexter. Run 'moltbot models auth login --provider clawdexter' to connect.",
                 }],
                 details: { error: "not_authenticated" },
               };
